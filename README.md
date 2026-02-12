@@ -7,235 +7,247 @@
 
 ---
 
-## 1. Project Overview
+# 1. Introduction
 
-This project implements a News Recommendation System using the Contextual Multi-Armed Bandit (CMAB) framework. The system learns to recommend news articles by treating user categories as contexts and news categories as arms, with the objective of maximizing cumulative reward over a time horizon of T = 10,000.
+This project implements a Contextual Multi-Armed Bandit (CMAB) framework for personalized news recommendation. Unlike standard multi-armed bandits, the contextual bandit setting incorporates user-specific side information before selecting an action.
 
-### Problem Formulation
+Here:
+- **Contexts** represent user categories.
+- **Arms** represent news categories.
+- **Reward** represents user engagement returned by the `rlcmab-sampler`.
 
-- **Contexts:** 3 user types (User1, User2, User3)  
-- **Arms per Context:** 4 news categories (Entertainment, Education, Tech, Crime)  
-- **Total Arms:** 12 (3 × 4 combinations)  
-- **Reward Source:** `rlcmab-sampler` package (as specified in assignment)  
-- **Objective:** Maximize cumulative reward over time  
+The objective is to learn a policy that maximizes cumulative reward over a time horizon of **T = 10,000** steps.
 
 ---
 
-## 2. Data Preprocessing
+# 2. Problem Formulation
 
-### Dataset Summary
+- **Contexts (3):** user_1, user_2, user_3  
+- **News Categories (4 per context):** Entertainment, Education, Tech, Crime  
+- **Total Arms:** 12 (3 × 4 combinations)  
 
-- Training Users: <INSERT NUMBER> samples  
-- Validation Users: <INSERT NUMBER> samples  
-- Test Users: <INSERT NUMBER> samples  
-- News Articles: <INSERT NUMBER> articles across 4 categories  
+Each context maintains an independent bandit over its 4 associated arms.
 
-### Preprocessing Steps
+The system pipeline is:
 
-1. Handled missing values  
+1. Classify user → determine context  
+2. Select optimal arm using contextual bandit  
+3. Sample article from selected category  
+4. Receive reward from environment  
+
+---
+
+# 3. Data Preprocessing
+
+## Dataset Summary
+
+- Labeled Training Users: **2000 samples, 33 columns**
+- Unlabeled Test Users: **2000 samples**
+- News Articles: **209,527 articles**
+- Effective features used: **31**
+
+## Preprocessing Steps
+
+1. Missing value handling  
    - Numerical: Median imputation  
    - Categorical: Mode imputation  
 
-2. Encoded categorical features (e.g., region_code, browser_version)
+2. Feature transformations  
+   - Boolean `subscriber` → binary  
+   - Categorical encoding for `browser_version`, `region_code`  
 
-3. Converted boolean features to binary format (0/1)
+3. Standardization  
+   - Applied `StandardScaler` to ensure comparable feature magnitudes  
 
-4. Standardized numerical features using `StandardScaler`
+4. Train-validation split  
+   - 80% training (1600 samples)  
+   - 20% validation (400 samples)  
 
-5. Performed 80–20 train-validation split for classifier evaluation
+All features were converted into numerical format before training.
 
 ---
 
-## 3. User Classification
+# 4. User Classification
 
-### Objective
-Predict user category (User1, User2, User3) from user feature vectors.
+The classifier acts as the **context detector** for the bandit system.
 
-### Models Trained
-
-- Decision Tree (max_depth = 15)  
-- Logistic Regression (max_iter = 2000)  
-- Random Forest (n_estimators = 100, max_depth = 15)  
-
-### Validation Results
+## Model Comparison
 
 | Model | Validation Accuracy |
 |-------|--------------------|
-| Decision Tree | <INSERT VALUE> |
-| Logistic Regression | <INSERT VALUE> |
-| Random Forest | <INSERT VALUE> |
+| Decision Tree | 58.75% |
+| Logistic Regression | 86.25% |
+| Random Forest | **90.75%** |
 
-**Best Model:** <INSERT MODEL NAME>  
-**Best Validation Accuracy:** <INSERT VALUE>%  
+## Best Model: Random Forest
+
+The Random Forest achieved **90.75% accuracy**, significantly outperforming the Decision Tree and Logistic Regression.
+
+### Interpretation
+
+- Logistic Regression captured linear decision boundaries effectively.
+- Random Forest further improved performance by modeling nonlinear feature interactions.
+- The relatively low Decision Tree accuracy indicates that single-tree variance is high.
+
+The high validation accuracy ensures reliable context identification before bandit decision-making.
+
+---
+
+# 5. Contextual Bandit Algorithms
+
+All simulations were run for **T = 10,000 steps**.
+
+Each context maintained a separate bandit over 4 arms.
+
+---
+
+## 5.1 Epsilon-Greedy
+
+Exploration probability: ε  
+Exploitation probability: (1 − ε)
+
+| ε | Average Reward | Total Reward |
+|----|----------------|--------------|
+| 0.01 | **5.6105** | 56104.58 |
+| 0.10 | 5.0616 | 50615.59 |
+| 0.30 | 3.9294 | 39293.90 |
 
 ### Observations
 
-- The Random Forest model performed best due to ensemble averaging and ability to capture nonlinear interactions.
-- The classifier showed balanced performance across all three user categories.
-- No significant class imbalance issues were observed.
+- ε = 0.01 performed best.
+- Larger ε values caused excessive exploration.
+- Performance degraded significantly at ε = 0.30.
+- The algorithm is highly sensitive to exploration probability.
+
+This confirms that in structured environments with distinguishable optimal arms, aggressive exploitation performs better.
 
 ---
 
-## 4. Contextual Bandit Algorithms
+## 5.2 Upper Confidence Bound (UCB)
 
-All algorithms were trained separately for each context (User1, User2, User3).  
-Total simulation horizon: **T = 10,000**.
-
----
-
-### 4.1 Epsilon-Greedy
-
-**Strategy:**  
-With probability ε → explore  
-With probability (1 − ε) → exploit best-known arm  
-
-#### Hyperparameter Tuning
-
-| Epsilon (ε) | Average Reward | Total Reward |
-|-------------|----------------|--------------|
-| 0.01 | <INSERT VALUE> | <INSERT VALUE> |
-| 0.10 | <INSERT VALUE> | <INSERT VALUE> |
-| 0.30 | <INSERT VALUE> | <INSERT VALUE> |
-
-**Best ε:** <INSERT VALUE>  
-**Best Average Reward:** <INSERT VALUE>
-
-#### Observations
-
-- Low ε leads to insufficient exploration.
-- High ε causes excessive exploration and reduced cumulative reward.
-- Moderate ε provides the best exploration–exploitation trade-off.
-
----
-
-### 4.2 Upper Confidence Bound (UCB)
-
-**Strategy:**  
-Select arm maximizing:
+Arm selection rule:
 
 \[
-\text{Mean Reward} + c \cdot \sqrt{\frac{\ln t}{N_a}}
+\mu_a + c \sqrt{\frac{\ln t}{N_a}}
 \]
 
-#### Hyperparameter Tuning
+| c | Average Reward | Total Reward |
+|---|----------------|--------------|
+| 0.5 | **5.6688** | 56688.27 |
+| 1.0 | 5.6573 | 56572.75 |
+| 2.0 | 5.6546 | 56545.57 |
 
-| Parameter c | Average Reward | Total Reward |
-|-------------|----------------|--------------|
-| 0.5 | <INSERT VALUE> | <INSERT VALUE> |
-| 1.0 | <INSERT VALUE> | <INSERT VALUE> |
-| 2.0 | <INSERT VALUE> | <INSERT VALUE> |
+### Observations
 
-**Best c:** <INSERT VALUE>  
-**Best Average Reward:** <INSERT VALUE>
+- UCB achieved the highest overall reward.
+- Performance was stable across c values.
+- Lower c slightly favored exploitation and produced marginally better results.
+- Confidence-bound driven exploration reduces need for manual tuning.
 
-#### Observations
-
-- Lower c increases exploitation.
-- Higher c increases exploration.
-- UCB demonstrated stable performance across parameter choices.
-- Less sensitive to tuning compared to ε-greedy.
+UCB demonstrated strong theoretical robustness in this contextual setting.
 
 ---
 
-### 4.3 SoftMax (Boltzmann Exploration)
+## 5.3 SoftMax (Boltzmann Exploration)
 
-**Temperature Parameter:** τ = 1.0  
+Temperature parameter: τ = 1.0
 
-#### Performance
+- Average Reward: 5.5249  
+- Total Reward: 55248.68  
 
-- Average Reward: <INSERT VALUE>  
-- Total Reward: <INSERT VALUE>  
+### Observations
 
-#### Observations
-
-- Probabilistic arm selection ensures smooth exploration.
-- Competitive performance relative to tuned ε-greedy and UCB.
-- More stochastic behavior compared to deterministic methods.
+- Probabilistic exploration smooths transitions between arms.
+- Performance competitive but slightly below UCB.
+- Less sensitive to early noise compared to ε-greedy.
 
 ---
 
-## 5. Comparative Analysis
+# 6. Comparative Analysis
 
-### Overall Algorithm Comparison
+## Overall Ranking
 
-| Algorithm | Configuration | Average Reward |
-|-----------|--------------|----------------|
-| Epsilon-Greedy | ε = <INSERT> | <INSERT VALUE> |
-| UCB | c = <INSERT> | <INSERT VALUE> |
-| SoftMax | τ = 1.0 | <INSERT VALUE> |
+| Algorithm | Best Configuration | Average Reward |
+|-----------|-------------------|----------------|
+| UCB | c = 0.5 | **5.6688** |
+| Epsilon-Greedy | ε = 0.01 | 5.6105 |
+| SoftMax | τ = 1.0 | 5.5249 |
 
-**Best Overall Algorithm:** <INSERT NAME>  
-**Best Average Reward:** <INSERT VALUE>
+### Best Performing Algorithm: UCB
 
----
+UCB achieved the highest cumulative and average reward.
 
-### Hyperparameter Sensitivity
+### Interpretation
 
-- **Epsilon-Greedy:** High sensitivity to ε. Optimal range observed between 0.05–0.15.
-- **UCB:** Moderate sensitivity. Performs consistently across tested c values.
-- **SoftMax:** Exploration controlled by τ; τ = 1 provided balanced results.
-
----
-
-### Per-Context Performance
-
-For each user context, the bandits successfully learned context-specific reward distributions.  
-All algorithms converged within 10,000 steps.
+- UCB balances exploration automatically through confidence intervals.
+- Epsilon-greedy depends heavily on manually chosen ε.
+- SoftMax provides stable stochastic exploration but does not outperform UCB in this environment.
 
 ---
 
-## 6. Recommendation Engine
+# 7. Per-Context Reward Analysis
 
-### End-to-End Pipeline
+### UCB (Best Performer)
 
-1. **Classify User**
-   - Preprocess input features
-   - Predict user category using trained classifier
+- user_1: 7.7065  
+- user_2: 4.4656  
+- user_3: 4.8436  
 
-2. **Select News Category**
-   - Query contextual bandit policy
-   - Select optimal arm for detected context
+### Insights
 
-3. **Recommend Article**
-   - Randomly sample article from selected category
-   - Return article details
+- user_1 consistently yields higher reward.
+- Reward distributions differ significantly across contexts.
+- Context separation improves learning efficiency (4 arms per context vs 12 global arms).
 
-### System Configuration
-
-- User Classifier: <INSERT MODEL NAME>
-- Bandit Policy Used: <INSERT ALGORITHM + PARAMETER>
-- Time Horizon: 10,000 steps
+The contextual structure meaningfully reduces regret compared to non-contextual approaches.
 
 ---
 
-## 7. Evaluation & Visualizations
+# 8. Recommendation Engine
 
-The following plots were generated:
+## Final System Configuration
 
-1. User category distribution  
-2. News category distribution  
-3. Confusion matrices  
-4. Model accuracy comparison  
-5. Average reward vs time  
-6. Hyperparameter sensitivity plots  
-7. Algorithm comparison  
-8. Per-context reward plots  
+- User Classifier: RandomForestClassifier (90.75%)
+- Bandit Strategy: UCB (c = 0.5)
+- Simulation Horizon: 10,000
 
-All plots include labeled axes, legends, and descriptive titles as required.
+## End-to-End Workflow
 
----
+1. Preprocess incoming user
+2. Predict user category
+3. Select optimal news category via contextual bandit
+4. Randomly sample article from chosen category
+5. Receive reward
 
-## 8. Key Findings
-
-1. User classification achieved high accuracy (> <INSERT VALUE>%).
-2. All bandit strategies successfully learned context-dependent optimal arms.
-3. UCB demonstrated strong robustness to hyperparameter changes.
-4. Epsilon-greedy required careful tuning for optimal performance.
-5. All algorithms converged within the simulation horizon.
+System validation confirmed coherent category recommendations.
 
 ---
 
-## 9. Repository Structure
+# 9. Key Insights & Learning Outcomes
+
+1. Contextual bandits significantly outperform naive global bandits in structured environments.
+2. UCB provides robust performance with minimal hyperparameter sensitivity.
+3. Exploration–exploitation trade-off is highly sensitive in ε-greedy methods.
+4. Proper context classification is critical to downstream reward optimization.
+5. All algorithms converged within 10,000 steps, indicating stable learning dynamics.
+
+---
+
+# 10. Conclusion
+
+This project demonstrates the effectiveness of Contextual Multi-Armed Bandits for personalized recommendation systems.
+
+Among the three strategies:
+
+- **UCB emerged as the most stable and highest-performing algorithm.**
+- Epsilon-greedy required careful tuning.
+- SoftMax provided competitive but slightly lower performance.
+
+The integration of a high-accuracy user classifier with contextual bandits enabled efficient and adaptive recommendation behavior.
+
+---
+
+# 11. Repository Structure
 
 ```
 .
@@ -249,21 +261,21 @@ All plots include labeled axes, legends, and descriptive titles as required.
 
 ---
 
-## 10. How to Run
+# 12. How to Run
 
-1. Install dependencies:
+Install dependencies:
 
 ```
 pip install pandas numpy scikit-learn matplotlib seaborn rlcmab-sampler jupyter
 ```
 
-2. Run the notebook:
+Run:
 
 ```
 jupyter notebook lab3_results_U20230090.ipynb
 ```
 
-3. Execute all cells to reproduce results.
+Execute all cells to reproduce results.
 
 ---
 
@@ -271,5 +283,4 @@ jupyter notebook lab3_results_U20230090.ipynb
 
 Lakshit Tyagi  
 Roll Number: U20230090  
-
 February 2026
